@@ -1,46 +1,33 @@
-from fastapi import FastAPI, Depends
-from sqlalchemy.orm import Session
+from fastapi import FastAPI
 
-from app.database import SessionLocal, engine, Base
-from app.models import Patient
-from app.schemas import PatientCreate, PatientResponse
+from app.config.db import (
+    Base,
+    engine
+)
+
+from app.api.patient_routes import (
+    router as patient_router
+)
+
+from app.api.hospital_routes import (
+    router as hospital_router
+)
+
+from app.api.admission_routes import (
+    router as admission_router
+)
+
+# Import models so SQLAlchemy registers them
+from app.models.patient import Patient
+from app.models.hospital import Hospital
+from app.models.association import patient_hospital
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Patient Management API")
+app = FastAPI(
+    title="Patient Management API"
+)
 
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-@app.post("/patients", response_model=PatientResponse)
-def add_patient(
-        patient: PatientCreate,
-        db: Session = Depends(get_db)
-):
-    new_patient = Patient(
-        name=patient.name,
-        age=patient.age,
-        contact_no=patient.contact_no,
-        height=patient.height,
-        weight=patient.weight,
-        blood_group=patient.blood_group
-    )
-
-    db.add(new_patient)
-    db.commit()
-    db.refresh(new_patient)
-
-    return new_patient
-
-
-@app.get("/patients", response_model=list[PatientResponse])
-def get_patients(
-        db: Session = Depends(get_db)
-):
-    return db.query(Patient).all()
+app.include_router(patient_router)
+app.include_router(hospital_router)
+app.include_router(admission_router)

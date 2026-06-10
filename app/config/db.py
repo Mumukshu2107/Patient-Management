@@ -1,7 +1,18 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DATABASE_URL = "mysql+pymysql://root:StrongPasswordHere@localhost:3306/hospital_db"
+from app.config.settings import (
+    DB_USER,
+    DB_PASSWORD,
+    DB_HOST,
+    DB_PORT,
+    DB_NAME
+)
+
+DATABASE_URL = (
+    f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}"
+    f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+)
 
 engine = create_engine(DATABASE_URL)
 
