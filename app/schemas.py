@@ -3,6 +3,10 @@ from enum import Enum
 from pydantic import BaseModel
 
 
+# -------------------------
+# BLOOD GROUP ENUM
+# -------------------------
+
 class BloodGroup(str, Enum):
     A_POSITIVE = "A+"
     A_NEGATIVE = "A-"
@@ -13,6 +17,10 @@ class BloodGroup(str, Enum):
     O_POSITIVE = "O+"
     O_NEGATIVE = "O-"
 
+
+# -------------------------
+# PATIENT SCHEMAS
+# -------------------------
 
 class PatientCreate(BaseModel):
     name: str
@@ -32,3 +40,26 @@ class PatientResponse(PatientCreate):
         from_attributes = True
 
 
+# -------------------------
+# HOSPITAL SCHEMAS
+# -------------------------
+
+class HospitalCreate(BaseModel):
+    name: str
+    city: str
+
+
+class HospitalResponse(HospitalCreate):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+# -------------------------
+# ADMISSION SCHEMAS
+# -------------------------
+
+class PatientHospitalLink(BaseModel):
+    patient_id: int
+    hospital_id: int
