@@ -1,6 +1,5 @@
 from enum import Enum
-
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 # -------------------------
@@ -30,14 +29,28 @@ class PatientCreate(BaseModel):
     weight: float
     blood_group: BloodGroup
 
+    @field_validator("contact_no")
+    @classmethod
+    def validate_contact_no(cls, value):
+
+        if not value.isdigit():
+            raise ValueError(
+                "Contact number must contain only digits"
+            )
+
+        if len(value) != 10:
+            raise ValueError(
+                "Contact number must be 10 digits"
+            )
+
+        return value
 
 class PatientResponse(PatientCreate):
     id: int
-    status: int
-    current_hospital_id: int | None = None
 
     class Config:
         from_attributes = True
+
 
 
 # -------------------------
@@ -63,3 +76,7 @@ class HospitalResponse(HospitalCreate):
 class PatientHospitalLink(BaseModel):
     patient_id: int
     hospital_id: int
+
+class SearchRequest(BaseModel):
+    search_type: str
+    search_text: str

@@ -26,11 +26,3 @@ app = FastAPI(
 
 # Register all APIs
 app.include_router(router)
-
-
-# Root API
-@app.get("/")
-def home():
-    return {
-        "message": "Patient Management API is running"
-    }
