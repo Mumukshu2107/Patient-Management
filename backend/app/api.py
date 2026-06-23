@@ -1,14 +1,24 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from config.db import SessionLocal
-from difflib import get_close_matches
-from sqlalchemy import or_
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    UploadFile,
+    File,
+    Form
+)
+from fastapi.responses import StreamingResponse
+from fastapi.security import OAuth2PasswordBearer
+
 from models import (
     Patient,
     Hospital,
-    patient_hospital
+    patient_hospital,
+    User,
+    UserRole
 )
 from app.schemas import (
     PatientCreate,
@@ -23,13 +33,23 @@ import io
 
 from difflib import get_close_matches
 
-from fastapi import (
-    UploadFile,
-    File,
-    Form
+from app.schemas import (
+    UserCreate,
+    UserResponse
 )
-
-from fastapi.responses import StreamingResponse
+from app.security import (
+    hash_password,
+    verify_password,
+    create_access_token
+)
+from app.schemas import (
+    LoginRequest,
+    TokenResponse
+)
+from app.security import decode_access_token
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="login"
+)
 router = APIRouter()
 
 def get_db():
@@ -53,16 +73,107 @@ def add_patient(
 
     return new_patient
 
+def get_current_user(
+        token: str = Depends(oauth2_scheme),
+        db: Session = Depends(get_db)
+):
+
+    payload = decode_access_token(token)
+
+    if not payload:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token"
+        )
+
+    username = payload.get("sub")
+
+    user = db.query(User).filter(
+        User.username == username
+    ).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="User not found"
+        )
+
+    return user
+
+def require_super_admin(
+        current_user: User = Depends(get_current_user)
+):
+
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="Only Super Admin can perform this action"
+        )
+
+    return current_user
+
+def require_admin(
+        current_user: User = Depends(get_current_user)
+):
+
+    if current_user.role not in [
+        UserRole.SUPER_ADMIN,
+        UserRole.ADMIN
+    ]:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin access required"
+        )
+
+    return current_user
+
+def require_doctor(
+        current_user: User = Depends(get_current_user)
+):
+
+    if current_user.role not in [
+        UserRole.SUPER_ADMIN,
+        UserRole.ADMIN,
+        UserRole.DOCTOR
+    ]:
+        raise HTTPException(
+            status_code=403,
+            detail="Doctor access required"
+        )
+
+    return current_user
+
+def require_receptionist(
+        current_user: User = Depends(get_current_user)
+):
+
+    if current_user.role not in [
+        UserRole.SUPER_ADMIN,
+        UserRole.ADMIN,
+        UserRole.RECEPTIONIST
+    ]:
+        raise HTTPException(
+            status_code=403,
+            detail="Receptionist access required"
+        )
+
+    return current_user
+
 
 @router.get("/patients", response_model=list[PatientResponse])
 def get_patients(
+        current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
 ):
     return db.query(Patient).all()
 
-@router.post("/hospitals", response_model=HospitalResponse)
+@router.post(
+    "/hospitals",
+    response_model=HospitalResponse
+)
 def add_hospital(
         hospital: HospitalCreate,
+        current_user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
 
@@ -95,6 +206,7 @@ def get_hospitals(
 @router.post("/assign-hospital")
 def assign_hospital(
         data: PatientHospitalLink,
+        current_user: User = Depends(require_receptionist),
         db: Session = Depends(get_db)
 ):
 
@@ -129,11 +241,14 @@ def assign_hospital(
     if not already_visited:
         patient.hospitals.append(hospital)
 
+    # Force SQLAlchemy to create the row in patient_hospital
+    db.flush()
+
     admit_time = datetime.now(
         ZoneInfo("Asia/Kolkata")
     )
 
-    db.execute(
+    result = db.execute(
         patient_hospital.update()
         .where(
             patient_hospital.c.patient_id == patient.id,
@@ -144,6 +259,9 @@ def assign_hospital(
             discharge_time=None
         )
     )
+
+    print("Rows Updated:", result.rowcount)
+    print("Admit Time:", admit_time)
 
     patient.status = 1
     patient.current_hospital_id = hospital.id
@@ -164,6 +282,7 @@ def assign_hospital(
 @router.post("/patients/{patient_id}/discharge")
 def discharge_patient(
         patient_id: int,
+        current_user: User = Depends(require_receptionist),
         db: Session = Depends(get_db)
 ):
 
@@ -254,6 +373,7 @@ def get_patient_hospitals(
         hospitals_list.append({
             "hospital_id": hospital.id,
             "hospital_name": hospital.name,
+            "hospital_city": hospital.city,
             "status": hospital_status,
             "admit_time": (
                 record.admit_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -438,6 +558,7 @@ def search_patient(
 
 @router.post("/upload-data")
 async def upload_data(
+        current_user: User = Depends(require_admin),
         entity_type: str = Form(...),
         file: UploadFile = File(...),
         db: Session = Depends(get_db)
@@ -558,6 +679,7 @@ async def upload_data(
 
 @router.get("/download/patients")
 def download_patients(
+        current_user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
 
@@ -595,6 +717,7 @@ def download_patients(
 
 @router.get("/download/hospitals")
 def download_hospitals(
+        current_user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
 
@@ -624,4 +747,129 @@ def download_hospitals(
     ] = "attachment; filename=hospitals.csv"
 
     return response
+
+@router.post(
+    "/login",
+    response_model=TokenResponse
+)
+def login(
+        credentials: LoginRequest,
+        db: Session = Depends(get_db)
+):
+
+    user = db.query(User).filter(
+        User.username == credentials.username
+    ).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password"
+        )
+
+    password_valid = verify_password(
+        credentials.password,
+        user.password
+    )
+
+    if not password_valid:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password"
+        )
+
+    access_token = create_access_token(
+        {
+            "sub": user.username,
+            "role": user.role,
+            "user_id": user.id
+        }
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
+@router.post(
+    "/users",
+    response_model=UserResponse
+)
+def create_user(
+        user: UserCreate,
+        current_user: User = Depends(require_super_admin),
+        db: Session = Depends(get_db)
+):
+
+    existing_user = db.query(User).filter(
+        User.username == user.username
+    ).first()
+
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Username already exists"
+        )
+
+    new_user = User(
+        username=user.username,
+        password=hash_password(user.password),
+        role=user.role.value
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return new_user
+
+@router.get("/me")
+def get_me(
+        current_user: User = Depends(get_current_user)
+):
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "role": current_user.role
+    }
+
+
+@router.get("/users")
+def get_users(
+    current_user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db)
+):
+    return db.query(User).all()
+
+@router.get("/dashboard")
+def dashboard_stats(
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+
+    total_patients = db.query(Patient).count()
+
+    total_hospitals = db.query(Hospital).count()
+
+    admitted_patients = db.query(Patient).filter(
+        Patient.status == 1
+    ).count()
+
+    discharged_patients = db.query(Patient).filter(
+        Patient.status == 0
+    ).count()
+
+    total_users = db.query(User).count()
+
+    return {
+        "total_patients": total_patients,
+        "total_hospitals": total_hospitals,
+        "admitted_patients": admitted_patients,
+        "discharged_patients": discharged_patients,
+        "total_users": total_users
+    }
+
+
+#I have done a project where frontend written in next.js and backend in FastAPI. Now i need to use middleware and logging in my project. So take out @router.post("/login",response_model=TokenResponse) api from the current folder make seperate file/ folder. using middleware authenticate the login user. Need to add log in the project also. Give an idea first how to do and then i will tell to give code. If you need any information or anything kindly ask
+
+
 

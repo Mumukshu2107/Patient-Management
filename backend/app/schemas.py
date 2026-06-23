@@ -47,6 +47,8 @@ class PatientCreate(BaseModel):
 
 class PatientResponse(PatientCreate):
     id: int
+    status: int
+    current_hospital_id: int | None = None
 
     class Config:
         from_attributes = True
@@ -80,3 +82,49 @@ class PatientHospitalLink(BaseModel):
 class SearchRequest(BaseModel):
     search_type: str
     search_text: str
+
+class UserRole(str, Enum):
+    SUPER_ADMIN = "SUPER_ADMIN"
+    ADMIN = "ADMIN"
+    DOCTOR = "DOCTOR"
+    RECEPTIONIST = "RECEPTIONIST"
+
+#Create User
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    role: UserRole
+
+#User Response
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    role: UserRole
+
+    model_config = {
+        "from_attributes": True
+    }
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    role: UserRole
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    role: UserRole
+
+    model_config = {
+        "from_attributes": True
+    }
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
