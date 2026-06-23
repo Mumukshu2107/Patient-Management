@@ -1,31 +1,31 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-
-
 from config.db import Base, engine
 
-# Import models so SQLAlchemy can detect tables
 from models import (
+    User,
     Patient,
     Hospital,
     patient_hospital
 )
 
-# Import API router
 from app.api import router
+from app.routers.auth import router as auth_router
+
+# NEW IMPORTS
+from app.middleware.logging_middleware import LoggingMiddleware
+from app.middleware.auth_middleware import AuthMiddleware
 
 
-# Create all tables if they do not exist
 Base.metadata.create_all(bind=engine)
 
-
-# FastAPI application
 app = FastAPI(
     title="Patient Management API",
     version="1.0.0"
 )
 
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -35,7 +35,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
-# Register all APIs
-app.include_router(router)
 
-# 
+app.add_middleware(LoggingMiddleware)
+app.add_middleware(AuthMiddleware)
+
+# Routers
+app.include_router(router)
+app.include_router(auth_router)

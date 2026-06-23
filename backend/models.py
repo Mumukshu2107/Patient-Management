@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 
 from sqlalchemy import (
     Column,
@@ -9,9 +10,10 @@ from sqlalchemy import (
     Table,
     DateTime
 )
+
 from sqlalchemy.orm import relationship
+
 from config.db import Base
-from enum import Enum
 
 
 # =====================================================
@@ -21,12 +23,10 @@ from enum import Enum
 patient_hospital = Table(
     "patient_hospital",
     Base.metadata,
-
-Column("patient_id",Integer,ForeignKey("patients.id")),
+    Column("patient_id",Integer,ForeignKey("patients.id")),
     Column("hospital_id",Integer,ForeignKey("hospitals.id")),
-    Column("admit_time", DateTime, nullable=True),
-    Column("discharge_time",DateTime,nullable=True)
-)
+    Column("admit_time",DateTime,nullable=True),
+    Column("discharge_time",DateTime,nullable=True))
 
 
 # =====================================================
@@ -35,7 +35,6 @@ Column("patient_id",Integer,ForeignKey("patients.id")),
 
 class Patient(Base):
     __tablename__ = "patients"
-
     id = Column(Integer,primary_key=True,index=True)
     name = Column(String(100),nullable=False)
     age = Column(Integer,nullable=False)
@@ -54,12 +53,15 @@ class Patient(Base):
 
 class Hospital(Base):
     __tablename__ = "hospitals"
-
     id = Column(Integer,primary_key=True,index=True)
     name = Column(String(100),nullable=False)
     city = Column(String(100),nullable=False)
     patients = relationship("Patient",secondary=patient_hospital,back_populates="hospitals")
 
+
+# =====================================================
+# USER ROLES
+# =====================================================
 
 class UserRole(str, Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
@@ -68,16 +70,13 @@ class UserRole(str, Enum):
     RECEPTIONIST = "RECEPTIONIST"
 
 
+# =====================================================
+# USER MODEL
+# =====================================================
+
 class User(Base):
     __tablename__ = "users"
-
     id = Column(Integer,primary_key=True,index=True)
     username = Column(String(100),unique=True,nullable=False)
     password = Column(String(255),nullable=False)
     role = Column(String(50),nullable=False)
-
-
-
-
-
-
