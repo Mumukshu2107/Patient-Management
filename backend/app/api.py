@@ -8,7 +8,8 @@ from fastapi import (
     HTTPException,
     UploadFile,
     File,
-    Form
+    Form,
+    Request
 )
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
@@ -38,7 +39,7 @@ from app.schemas import (
     UserResponse
 )
 from app.security import (
-    get_current_user,
+    # get_current_user,
     hash_password,
     verify_password,
     create_access_token
@@ -47,6 +48,7 @@ from app.schemas import (
     LoginRequest,
     TokenResponse
 )
+from app.utils.logger import logger
 from app.security import decode_access_token
 
 router = APIRouter()
@@ -58,13 +60,21 @@ def get_db():
     finally:
         db.close()
 
-@router.post("/patients", response_model=PatientResponse)
+@router.post(
+    "/patients",
+    response_model=PatientResponse
+)
 def add_patient(
         patient: PatientCreate,
+        request: Request,
         db: Session = Depends(get_db)
 ):
 
-    new_patient = Patient(**patient.model_dump())
+    require_receptionist(request)
+
+    new_patient = Patient(
+        **patient.model_dump()
+    )
 
     db.add(new_patient)
     db.commit()
@@ -73,23 +83,20 @@ def add_patient(
     return new_patient
 
 
-def require_super_admin(
-        current_user: User = Depends(get_current_user)
-):
+def require_super_admin(request: Request):
 
-    if current_user.role != UserRole.SUPER_ADMIN:
+    if request.state.role != UserRole.SUPER_ADMIN:
         raise HTTPException(
             status_code=403,
             detail="Only Super Admin can perform this action"
         )
 
-    return current_user
+    return request.state.user
 
-def require_admin(
-        current_user: User = Depends(get_current_user)
-):
 
-    if current_user.role not in [
+def require_admin(request: Request):
+
+    if request.state.role not in [
         UserRole.SUPER_ADMIN,
         UserRole.ADMIN
     ]:
@@ -98,29 +105,28 @@ def require_admin(
             detail="Admin access required"
         )
 
-    return current_user
+    return request.state.user
 
-def require_doctor(
-        current_user: User = Depends(get_current_user)
-):
 
-    if current_user.role not in [
+def require_doctor(request: Request):
+
+    if request.state.role not in [
         UserRole.SUPER_ADMIN,
         UserRole.ADMIN,
-        UserRole.DOCTOR
+        UserRole.DOCTOR,
+        UserRole.RECEPTIONIST
     ]:
         raise HTTPException(
             status_code=403,
             detail="Doctor access required"
         )
 
-    return current_user
+    return request.state.user
 
-def require_receptionist(
-        current_user: User = Depends(get_current_user)
-):
 
-    if current_user.role not in [
+def require_receptionist(request: Request):
+
+    if request.state.role not in [
         UserRole.SUPER_ADMIN,
         UserRole.ADMIN,
         UserRole.RECEPTIONIST
@@ -130,14 +136,20 @@ def require_receptionist(
             detail="Receptionist access required"
         )
 
-    return current_user
+    return request.state.user
 
 
-@router.get("/patients", response_model=list[PatientResponse])
+@router.get(
+    "/patients",
+    response_model=list[PatientResponse]
+)
 def get_patients(
-        current_user: User = Depends(get_current_user),
+        request: Request,
         db: Session = Depends(get_db)
 ):
+
+    require_doctor(request)
+
     return db.query(Patient).all()
 
 @router.post(
@@ -146,9 +158,11 @@ def get_patients(
 )
 def add_hospital(
         hospital: HospitalCreate,
-        current_user: User = Depends(require_admin),
+        request: Request,
         db: Session = Depends(get_db)
 ):
+
+    current_user = require_admin(request)
 
     existing_hospital = db.query(Hospital).filter(
         Hospital.name.ilike(hospital.name),
@@ -161,27 +175,47 @@ def add_hospital(
             detail=f"Hospital '{hospital.name}' already exists in {hospital.city}"
         )
 
-    new_hospital = Hospital(**hospital.model_dump())
+    new_hospital = Hospital(
+        **hospital.model_dump()
+    )
 
     db.add(new_hospital)
     db.commit()
     db.refresh(new_hospital)
 
+    logger.info(
+        f"{current_user.username} added hospital "
+        f"{new_hospital.name}"
+    )
+
     return new_hospital
 
 
-@router.get("/hospitals", response_model=list[HospitalResponse])
+@router.get(
+    "/hospitals",
+    response_model=list[HospitalResponse]
+)
 def get_hospitals(
+        request: Request,
         db: Session = Depends(get_db)
 ):
+
+    current_user = request.state.user
+
+    logger.info(
+        f"{current_user.username} viewed hospitals"
+    )
+
     return db.query(Hospital).all()
 
 @router.post("/assign-hospital")
 def assign_hospital(
         data: PatientHospitalLink,
-        current_user: User = Depends(require_receptionist),
+        request: Request,
         db: Session = Depends(get_db)
 ):
+
+    current_user = require_receptionist(request)
 
     patient = db.query(Patient).filter(
         Patient.id == data.patient_id
@@ -206,7 +240,11 @@ def assign_hospital(
     if patient.status == 1:
         raise HTTPException(
             status_code=400,
-            detail=f"Patient is already admitted in Hospital ID {patient.current_hospital_id}. Discharge first."
+            detail=(
+                f"Patient is already admitted in "
+                f"Hospital ID {patient.current_hospital_id}. "
+                f"Discharge first."
+            )
         )
 
     already_visited = hospital in patient.hospitals
@@ -214,7 +252,6 @@ def assign_hospital(
     if not already_visited:
         patient.hospitals.append(hospital)
 
-    # Force SQLAlchemy to create the row in patient_hospital
     db.flush()
 
     admit_time = datetime.now(
@@ -242,22 +279,32 @@ def assign_hospital(
     db.commit()
     db.refresh(patient)
 
+    logger.info(
+        f"{current_user.username} admitted "
+        f"patient {patient.name} "
+        f"to hospital {hospital.name}"
+    )
+
     return {
         "message": "Patient admitted successfully",
         "patient_id": patient.id,
         "patient_name": patient.name,
         "hospital_id": hospital.id,
         "hospital_name": hospital.name,
-        "admit_time": admit_time.strftime("%Y-%m-%d %H:%M:%S"),
+        "admit_time": admit_time.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        ),
         "previously_visited": already_visited
     }
 
 @router.post("/patients/{patient_id}/discharge")
 def discharge_patient(
         patient_id: int,
-        current_user: User = Depends(require_receptionist),
+        request: Request,
         db: Session = Depends(get_db)
 ):
+
+    current_user = require_receptionist(request)
 
     patient = db.query(Patient).filter(
         Patient.id == patient_id
@@ -297,19 +344,28 @@ def discharge_patient(
 
     db.commit()
 
+    logger.info(
+        f"{current_user.username} discharged "
+        f"patient {patient.name}"
+    )
+
     return {
         "message": "Patient discharged successfully",
         "patient_id": patient.id,
         "patient_name": patient.name,
         "hospital_id": hospital_id,
-        "discharge_time": discharge_time.strftime("%Y-%m-%d %H:%M:%S")
+        "discharge_time": discharge_time.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
     }
-
 @router.get("/patients/{patient_id}/hospitals")
 def get_patient_hospitals(
         patient_id: int,
+        request: Request,
         db: Session = Depends(get_db)
 ):
+
+    current_user = require_doctor(request)
 
     patient = db.query(Patient).filter(
         Patient.id == patient_id
@@ -360,17 +416,24 @@ def get_patient_hospitals(
             )
         })
 
+    logger.info(
+        f"{current_user.username} viewed "
+        f"hospital history of patient {patient.id}"
+    )
+
     return {
         "patient_id": patient.id,
         "patient_name": patient.name,
         "hospital_history": hospitals_list
     }
-
 @router.get("/hospitals/{hospital_id}/patients")
 def get_hospital_patients(
         hospital_id: int,
+        request: Request,
         db: Session = Depends(get_db)
 ):
+
+    current_user = require_doctor(request)
 
     hospital = db.query(Hospital).filter(
         Hospital.id == hospital_id
@@ -381,6 +444,11 @@ def get_hospital_patients(
             status_code=404,
             detail="Hospital not found"
         )
+
+    logger.info(
+        f"{current_user.username} viewed "
+        f"patients of hospital {hospital.name}"
+    )
 
     return {
         "hospital_id": hospital.id,
@@ -402,13 +470,11 @@ def get_hospital_patients(
 def search_patient(
         search_by: str,
         search_text: str,
+        request: Request,
         db: Session = Depends(get_db)
 ):
-    """
-    search_by:
-        name
-        contact_no
-    """
+
+    current_user = require_doctor(request)
 
     search_by = search_by.lower()
 
@@ -422,7 +488,6 @@ def search_patient(
 
         matched_patients = []
 
-        # Partial Match Search
         for patient in patients:
 
             if search_text.lower() in patient.name.lower():
@@ -439,14 +504,16 @@ def search_patient(
                 })
 
         if matched_patients:
+
+            logger.info(
+                f"{current_user.username} searched patient "
+                f"by name: {search_text}"
+            )
+
             return {
                 "match_found": True,
                 "patients": matched_patients
             }
-
-        # =====================================
-        # FUZZY SEARCH IF NO MATCH FOUND
-        # =====================================
 
         patient_names = [
             patient.name
@@ -484,8 +551,6 @@ def search_patient(
             "patients": suggested_patients
         }
 
-
-
     # =====================================
     # SEARCH BY CONTACT NUMBER
     # =====================================
@@ -501,6 +566,11 @@ def search_patient(
                 "match_found": False,
                 "message": "No patient found"
             }
+
+        logger.info(
+            f"{current_user.username} searched "
+            f"patient by contact number"
+        )
 
         return {
             "match_found": True,
@@ -519,10 +589,6 @@ def search_patient(
             ]
         }
 
-    # =====================================
-    # INVALID SEARCH TYPE
-    # =====================================
-
     else:
         raise HTTPException(
             status_code=400,
@@ -531,11 +597,13 @@ def search_patient(
 
 @router.post("/upload-data")
 async def upload_data(
-        current_user: User = Depends(require_admin),
+        request: Request,
         entity_type: str = Form(...),
         file: UploadFile = File(...),
         db: Session = Depends(get_db)
 ):
+
+    current_user = require_admin(request)
 
     df = pd.read_csv(file.file)
 
@@ -557,6 +625,7 @@ async def upload_data(
         ]
 
         for col in required_columns:
+
             if col not in df.columns:
                 raise HTTPException(
                     status_code=400,
@@ -568,7 +637,9 @@ async def upload_data(
             existing_patient = db.query(Patient).filter(
                 Patient.name == row["name"],
                 Patient.age == row["age"],
-                Patient.contact_no == str(row["contact_no"])
+                Patient.contact_no == str(
+                    row["contact_no"]
+                )
             ).first()
 
             if existing_patient:
@@ -584,13 +655,20 @@ async def upload_data(
             )
 
             db.add(patient)
+
             inserted_count += 1
+
         db.commit()
 
+        logger.info(
+            f"{current_user.username} uploaded "
+            f"{inserted_count} patients"
+        )
+
         return {
-                "message": "Upload successful",
-                "records_inserted": inserted_count
-            }
+            "message": "Upload successful",
+            "records_inserted": inserted_count
+        }
 
     # -------------------
     # HOSPITAL UPLOAD
@@ -599,34 +677,43 @@ async def upload_data(
     elif entity_type.lower() == "hospital":
 
         required_columns = [
-
             "name",
-
             "city"
-
         ]
 
         for col in required_columns:
 
             if col not in df.columns:
                 raise HTTPException(
-
                     status_code=400,
-
                     detail=f"Missing column: {col}"
                 )
 
         skipped_hospitals = []
 
         for _, row in df.iterrows():
-            hospital_name = str(row["name"]).strip()
-            hospital_city = str(row["city"]).strip()
-            existing_hospital = db.query(Hospital).filter(
-                Hospital.name.ilike(hospital_name),
-                Hospital.city.ilike(hospital_city)
+
+            hospital_name = str(
+                row["name"]
+            ).strip()
+
+            hospital_city = str(
+                row["city"]
+            ).strip()
+
+            existing_hospital = db.query(
+                Hospital
+            ).filter(
+                Hospital.name.ilike(
+                    hospital_name
+                ),
+                Hospital.city.ilike(
+                    hospital_city
+                )
             ).first()
 
             if existing_hospital:
+
                 skipped_hospitals.append({
                     "name": hospital_name,
                     "city": hospital_city,
@@ -639,16 +726,32 @@ async def upload_data(
                 name=hospital_name,
                 city=hospital_city
             )
+
             db.add(hospital)
+
             inserted_count += 1
+
         db.commit()
+
+        logger.info(
+            f"{current_user.username} uploaded "
+            f"{inserted_count} hospitals"
+        )
 
         return {
             "message": "Upload completed",
             "records_inserted": inserted_count,
-            "duplicate_records_skipped": len(skipped_hospitals),
+            "duplicate_records_skipped": len(
+                skipped_hospitals
+            ),
             "skipped_hospitals": skipped_hospitals
         }
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="entity_type must be patient or hospital"
+        )
 
 @router.get("/download/patients")
 def download_patients(
@@ -690,9 +793,11 @@ def download_patients(
 
 @router.get("/download/hospitals")
 def download_hospitals(
-        current_user: User = Depends(require_admin),
+        request: Request,
         db: Session = Depends(get_db)
 ):
+
+    current_user = require_admin(request)
 
     hospitals = db.query(Hospital).all()
 
@@ -708,7 +813,11 @@ def download_hospitals(
     df = pd.DataFrame(data)
 
     stream = io.StringIO()
-    df.to_csv(stream, index=False)
+
+    df.to_csv(
+        stream,
+        index=False
+    )
 
     response = StreamingResponse(
         iter([stream.getvalue()]),
@@ -719,59 +828,65 @@ def download_hospitals(
         "Content-Disposition"
     ] = "attachment; filename=hospitals.csv"
 
+    logger.info(
+        f"{current_user.username} downloaded hospitals CSV"
+    )
+
     return response
 
-@router.post(
-    "/login",
-    response_model=TokenResponse
-)
-def login(
-        credentials: LoginRequest,
-        db: Session = Depends(get_db)
-):
-
-    user = db.query(User).filter(
-        User.username == credentials.username
-    ).first()
-
-    if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid username or password"
-        )
-
-    password_valid = verify_password(
-        credentials.password,
-        user.password
-    )
-
-    if not password_valid:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid username or password"
-        )
-
-    access_token = create_access_token(
-        {
-            "sub": user.username,
-            "role": user.role,
-            "user_id": user.id
-        }
-    )
-
-    return {
-        "access_token": access_token,
-        "token_type": "bearer"
-    }
+# @router.post(
+#     "/login",
+#     response_model=TokenResponse
+# )
+# def login(
+#         credentials: LoginRequest,
+#         db: Session = Depends(get_db)
+# ):
+#
+#     user = db.query(User).filter(
+#         User.username == credentials.username
+#     ).first()
+#
+#     if not user:
+#         raise HTTPException(
+#             status_code=401,
+#             detail="Invalid username or password"
+#         )
+#
+#     password_valid = verify_password(
+#         credentials.password,
+#         user.password
+#     )
+#
+#     if not password_valid:
+#         raise HTTPException(
+#             status_code=401,
+#             detail="Invalid username or password"
+#         )
+#
+#     access_token = create_access_token(
+#         {
+#             "sub": user.username,
+#             "role": user.role,
+#             "user_id": user.id
+#         }
+#     )
+#
+#     return {
+#         "access_token": access_token,
+#         "token_type": "bearer"
+#     }
 @router.post(
     "/users",
     response_model=UserResponse
 )
 def create_user(
         user: UserCreate,
-        current_user: User = Depends(require_super_admin),
+        request: Request,
         db: Session = Depends(get_db)
 ):
+
+    current_user = require_super_admin(request)
 
     existing_user = db.query(User).filter(
         User.username == user.username
@@ -785,7 +900,9 @@ def create_user(
 
     new_user = User(
         username=user.username,
-        password=hash_password(user.password),
+        password=hash_password(
+            user.password
+        ),
         role=user.role.value
     )
 
@@ -793,12 +910,20 @@ def create_user(
     db.commit()
     db.refresh(new_user)
 
+    logger.info(
+        f"{current_user.username} created user "
+        f"{new_user.username}"
+    )
+
     return new_user
 
 @router.get("/me")
 def get_me(
-        current_user: User = Depends(get_current_user)
+        request: Request
 ):
+
+    current_user = request.state.user
+
     return {
         "id": current_user.id,
         "username": current_user.username,
@@ -808,30 +933,55 @@ def get_me(
 
 @router.get("/users")
 def get_users(
-    current_user: User = Depends(require_super_admin),
-    db: Session = Depends(get_db)
+        request: Request,
+        db: Session = Depends(get_db)
 ):
+
+    current_user = require_super_admin(
+        request
+    )
+
+    logger.info(
+        f"{current_user.username} viewed users list"
+    )
+
     return db.query(User).all()
 
 @router.get("/dashboard")
 def dashboard_stats(
-        current_user: User = Depends(get_current_user),
+        request: Request,
         db: Session = Depends(get_db)
 ):
 
-    total_patients = db.query(Patient).count()
+    current_user = request.state.user
 
-    total_hospitals = db.query(Hospital).count()
+    total_patients = db.query(
+        Patient
+    ).count()
 
-    admitted_patients = db.query(Patient).filter(
+    total_hospitals = db.query(
+        Hospital
+    ).count()
+
+    admitted_patients = db.query(
+        Patient
+    ).filter(
         Patient.status == 1
     ).count()
 
-    discharged_patients = db.query(Patient).filter(
+    discharged_patients = db.query(
+        Patient
+    ).filter(
         Patient.status == 0
     ).count()
 
-    total_users = db.query(User).count()
+    total_users = db.query(
+        User
+    ).count()
+
+    logger.info(
+        f"{current_user.username} viewed dashboard"
+    )
 
     return {
         "total_patients": total_patients,
@@ -840,9 +990,3 @@ def dashboard_stats(
         "discharged_patients": discharged_patients,
         "total_users": total_users
     }
-
-
-#I have done a project where frontend written in next.js and backend in FastAPI. Now i need to use middleware and logging in my project. So take out @router.post("/login",response_model=TokenResponse) api from the current folder make seperate file/ folder. using middleware authenticate the login user. Need to add log in the project also. Give an idea first how to do and then i will tell to give code. If you need any information or anything kindly ask
-
-
-

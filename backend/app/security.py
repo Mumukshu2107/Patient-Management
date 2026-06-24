@@ -78,29 +78,29 @@ def decode_access_token(token: str):
         return None
 
 
-def get_current_user(
-        token: str = Depends(oauth2_scheme),
-        db: Session = Depends(get_db)
-):
-
-    payload = decode_access_token(token)
-
-    if not payload:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid token"
-        )
-
-    username = payload.get("sub")
-
-    user = db.query(User).filter(
-        User.username == username
-    ).first()
-
-    if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="User not found"
-        )
-
-    return user
+# def get_current_user(
+#         token: str = Depends(oauth2_scheme),
+#         db: Session = Depends(get_db)
+# ):
+#
+#     payload = decode_access_token(token)
+#
+#     if not payload:
+#         raise HTTPException(
+#             status_code=401,
+#             detail="Invalid token"
+#         )
+#
+#     username = payload.get("sub")
+#
+#     user = db.query(User).filter(
+#         User.username == username
+#     ).first()
+#
+#     if not user:
+#         raise HTTPException(
+#             status_code=401,
+#             detail="User not found"
+#         )
+#
+#     return user

@@ -105,20 +105,6 @@ class UserResponse(BaseModel):
         "from_attributes": True
     }
 
-class UserCreate(BaseModel):
-    username: str
-    password: str
-    role: UserRole
-
-
-class UserResponse(BaseModel):
-    id: int
-    username: str
-    role: UserRole
-
-    model_config = {
-        "from_attributes": True
-    }
 
 class LoginRequest(BaseModel):
     username: str

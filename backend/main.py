@@ -13,7 +13,6 @@ from models import (
 from app.api import router
 from app.routers.auth import router as auth_router
 
-# NEW IMPORTS
 from app.middleware.logging_middleware import LoggingMiddleware
 from app.middleware.auth_middleware import AuthMiddleware
 
@@ -25,7 +24,13 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS Middleware
+# Authentication
+app.add_middleware(AuthMiddleware)
+
+# Logging
+app.add_middleware(LoggingMiddleware)
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -36,9 +41,5 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-app.add_middleware(LoggingMiddleware)
-app.add_middleware(AuthMiddleware)
-
-# Routers
-app.include_router(router)
 app.include_router(auth_router)
+app.include_router(router)

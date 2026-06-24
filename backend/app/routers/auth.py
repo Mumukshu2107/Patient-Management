@@ -16,7 +16,6 @@ from app.security import (
 
 from app.utils.logger import logger
 
-
 router = APIRouter(
     prefix="/auth",
     tags=["Authentication"]
@@ -28,16 +27,14 @@ router = APIRouter(
     response_model=TokenResponse
 )
 def login(
-    credentials: LoginRequest,
-    db: Session = Depends(get_db)
+        credentials: LoginRequest,
+        db: Session = Depends(get_db)
 ):
-
     user = db.query(User).filter(
         User.username == credentials.username
     ).first()
 
     if not user:
-
         logger.warning(
             f"Invalid login attempt for username: "
             f"{credentials.username}"
@@ -54,7 +51,6 @@ def login(
     )
 
     if not password_valid:
-
         logger.warning(
             f"Invalid password attempt for user: "
             f"{credentials.username}"
