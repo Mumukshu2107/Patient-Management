@@ -20,6 +20,8 @@ export default function UsersPage() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("ADMIN");
 
+  const [error, setError] = useState("");
+
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -34,6 +36,18 @@ export default function UsersPage() {
   };
 
   const handleCreateUser = async () => {
+    setError("");
+
+    if (username.trim() === "") {
+      setError("Username is required.");
+      return;
+    }
+
+    if (password.trim() === "") {
+      setError("Password is required.");
+      return;
+    }
+
     try {
       await api.post("/users", {
         username,
@@ -44,6 +58,7 @@ export default function UsersPage() {
       setUsername("");
       setPassword("");
       setRole("ADMIN");
+      setError("");
 
       setShowForm(false);
 
@@ -52,7 +67,7 @@ export default function UsersPage() {
       alert("User created successfully");
     } catch (error) {
       console.error(error);
-      alert("Failed to create user");
+      setError("Failed to create user.");
     }
   };
 
@@ -69,8 +84,11 @@ export default function UsersPage() {
           </h1>
 
           <button
-            onClick={() => setShowForm(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg"
+            onClick={() => {
+              setShowForm(true);
+              setError("");
+            }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 text-sm rounded-md"
           >
             + Add User
           </button>
@@ -84,7 +102,6 @@ export default function UsersPage() {
             <thead className="bg-gray-100">
 
               <tr>
-
                 <th className="p-4 text-left border">
                   ID
                 </th>
@@ -96,7 +113,6 @@ export default function UsersPage() {
                 <th className="p-4 text-left border">
                   Role
                 </th>
-
               </tr>
 
             </thead>
@@ -141,26 +157,42 @@ export default function UsersPage() {
                 Add New User
               </h2>
 
+              {error && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded mb-4">
+                  {error}
+                </div>
+              )}
+
               <div className="space-y-4">
 
                 <input
                   type="text"
                   placeholder="Username"
                   value={username}
-                  onChange={(e) =>
-                    setUsername(e.target.value)
-                  }
-                  className="w-full border p-3 rounded"
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    setError("");
+                  }}
+                  className={`w-full p-3 rounded border ${
+                    error && username.trim() === ""
+                      ? "border-red-500"
+                      : "border-gray-300"
+                  }`}
                 />
 
                 <input
                   type="password"
                   placeholder="Password"
                   value={password}
-                  onChange={(e) =>
-                    setPassword(e.target.value)
-                  }
-                  className="w-full border p-3 rounded"
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setError("");
+                  }}
+                  className={`w-full p-3 rounded border ${
+                    error && password.trim() === ""
+                      ? "border-red-500"
+                      : "border-gray-300"
+                  }`}
                 />
 
                 <select
@@ -168,7 +200,7 @@ export default function UsersPage() {
                   onChange={(e) =>
                     setRole(e.target.value)
                   }
-                  className="w-full border p-3 rounded"
+                  className="w-full border border-gray-300 p-3 rounded"
                 >
                   <option value="ADMIN">
                     ADMIN
@@ -188,8 +220,14 @@ export default function UsersPage() {
               <div className="flex justify-end gap-3 mt-6">
 
                 <button
-                  onClick={() => setShowForm(false)}
-                  className="px-4 py-2 bg-gray-300 rounded"
+                  onClick={() => {
+                    setShowForm(false);
+                    setError("");
+                    setUsername("");
+                    setPassword("");
+                    setRole("ADMIN");
+                  }}
+                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
                 >
                   Cancel
                 </button>

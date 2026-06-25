@@ -42,7 +42,7 @@ class Patient(Base):
     height = Column(Float,nullable=False)
     weight = Column(Float,nullable=False)
     blood_group = Column(String(5),nullable=False)
-    status = Column(Integer,default=0)
+    status = Column(Integer,default=2)
     current_hospital_id = Column(Integer,ForeignKey("hospitals.id"),nullable=True)
     hospitals = relationship("Hospital",secondary=patient_hospital,back_populates="patients")
 
