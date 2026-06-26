@@ -1,6 +1,7 @@
-import time
 from starlette.middleware.base import BaseHTTPMiddleware
+from app.tasks.log_tasks import send_log
 from app.utils.logger import logger
+import time
 
 class LoggingMiddleware(BaseHTTPMiddleware):
 
@@ -12,11 +13,10 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
         process_time = time.time() - start_time
 
-        logger.info(
-            f"{request.method} "
-            f"{request.url.path} "
-            f"Status={response.status_code} "
-            f"Time={process_time:.4f}s"
-        )
+        send_log({
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code
+        })
 
         return response

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Navbar from "@/components/navbar";
 import api from "@/services/api";
 
+
 interface DashboardStats {
   total_patients: number;
   total_hospitals: number;
@@ -24,7 +25,23 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchDashboardStats();
+    fetchUser();
   }, []);
+
+  const [role, setRole] = useState("");
+  const fetchUser = async () => {
+
+    try {
+
+      const response = await api.get("/me");
+
+      setRole(response.data.role);
+
+    } catch (error) {
+
+      console.error(error);
+    }
+  };
 
   const fetchDashboardStats = async () => {
 
@@ -95,15 +112,17 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div className="bg-white p-6 rounded shadow">
-            <h2 className="text-gray-600">
-              Total Users
-            </h2>
+          {role === "SUPER_ADMIN" && (
+            <div className="bg-white p-6 rounded shadow">
+              <h2 className="text-gray-600">
+                Total Users
+              </h2>
 
-            <p className="text-3xl font-bold">
-              {stats.total_users}
-            </p>
-          </div>
+              <p className="text-3xl font-bold">
+                {stats.total_users}
+              </p>
+            </div>
+          )}
 
         </div>
 

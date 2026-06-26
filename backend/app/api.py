@@ -1,4 +1,5 @@
 from datetime import datetime
+import os
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 from config.db import SessionLocal
@@ -13,6 +14,7 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
+from app.tasks.csv_tasks import send_csv_task
 
 from models import (
     Patient,
@@ -27,26 +29,19 @@ from app.schemas import (
     HospitalCreate,
     HospitalResponse,
     PatientHospitalLink,
-    SearchRequest
+    SearchRequest,
+    UserCreate,
+    UserResponse
 )
 import pandas as pd
 import io
 
 from difflib import get_close_matches
-
-from app.schemas import (
-    UserCreate,
-    UserResponse
-)
 from app.security import (
     # get_current_user,
     hash_password,
     verify_password,
     create_access_token
-)
-from app.schemas import (
-    LoginRequest,
-    TokenResponse
 )
 from app.utils.logger import logger
 from app.security import decode_access_token
@@ -597,161 +592,32 @@ def search_patient(
 
 @router.post("/upload-data")
 async def upload_data(
-        request: Request,
-        entity_type: str = Form(...),
-        file: UploadFile = File(...),
-        db: Session = Depends(get_db)
+    request: Request,
+    entity_type: str = Form(...),
+    file: UploadFile = File(...)
 ):
 
-    current_user = require_admin(request)
+    require_admin(request)
 
-    df = pd.read_csv(file.file)
+    os.makedirs(
+        "uploads",
+        exist_ok=True
+    )
 
-    inserted_count = 0
+    file_path = f"uploads/{file.filename}"
 
-    # -------------------
-    # PATIENT UPLOAD
-    # -------------------
+    with open(file_path, "wb") as f:
+        f.write(await file.read())
 
-    if entity_type.lower() == "patient":
+    send_csv_task(
+        file_path,
+        entity_type.lower()
+    )
 
-        required_columns = [
-            "name",
-            "age",
-            "contact_no",
-            "height",
-            "weight",
-            "blood_group"
-        ]
-
-        for col in required_columns:
-
-            if col not in df.columns:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Missing column: {col}"
-                )
-
-        for _, row in df.iterrows():
-
-            existing_patient = db.query(Patient).filter(
-                Patient.name == row["name"],
-                Patient.age == row["age"],
-                Patient.contact_no == str(
-                    row["contact_no"]
-                )
-            ).first()
-
-            if existing_patient:
-                continue
-
-            patient = Patient(
-                name=row["name"],
-                age=int(row["age"]),
-                contact_no=str(row["contact_no"]),
-                height=float(row["height"]),
-                weight=float(row["weight"]),
-                blood_group=row["blood_group"]
-            )
-
-            db.add(patient)
-
-            inserted_count += 1
-
-        db.commit()
-
-        logger.info(
-            f"{current_user.username} uploaded "
-            f"{inserted_count} patients"
-        )
-
-        return {
-            "message": "Upload successful",
-            "records_inserted": inserted_count
-        }
-
-    # -------------------
-    # HOSPITAL UPLOAD
-    # -------------------
-
-    elif entity_type.lower() == "hospital":
-
-        required_columns = [
-            "name",
-            "city"
-        ]
-
-        for col in required_columns:
-
-            if col not in df.columns:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Missing column: {col}"
-                )
-
-        skipped_hospitals = []
-
-        for _, row in df.iterrows():
-
-            hospital_name = str(
-                row["name"]
-            ).strip()
-
-            hospital_city = str(
-                row["city"]
-            ).strip()
-
-            existing_hospital = db.query(
-                Hospital
-            ).filter(
-                Hospital.name.ilike(
-                    hospital_name
-                ),
-                Hospital.city.ilike(
-                    hospital_city
-                )
-            ).first()
-
-            if existing_hospital:
-
-                skipped_hospitals.append({
-                    "name": hospital_name,
-                    "city": hospital_city,
-                    "reason": "Already exists"
-                })
-
-                continue
-
-            hospital = Hospital(
-                name=hospital_name,
-                city=hospital_city
-            )
-
-            db.add(hospital)
-
-            inserted_count += 1
-
-        db.commit()
-
-        logger.info(
-            f"{current_user.username} uploaded "
-            f"{inserted_count} hospitals"
-        )
-
-        return {
-            "message": "Upload completed",
-            "records_inserted": inserted_count,
-            "duplicate_records_skipped": len(
-                skipped_hospitals
-            ),
-            "skipped_hospitals": skipped_hospitals
-        }
-
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="entity_type must be patient or hospital"
-        )
+    return {
+        "message":
+        "File added to queue successfully"
+    }
 
 @router.get("/download/patients")
 def download_patients(

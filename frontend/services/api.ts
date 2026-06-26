@@ -15,3 +15,13 @@ api.interceptors.request.use((config) => {
 });
 
 export default api;
+
+export const getHospitalPatients = async (
+  hospitalId: number
+) => {
+  const response = await api.get(
+    `/hospitals/${hospitalId}/patients`
+  );
+
+  return response.data;
+};
