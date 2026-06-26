@@ -1,8 +1,6 @@
 # Hospital Management System
 
-A full-stack Hospital Management System built using **FastAPI**, **Next.js**, **MySQL**, and **JWT Authentication**.
-
-The application provides role-based access control for hospital staff and allows management of patients, hospitals, admissions, users, and reports.
+A full-stack Hospital Management System built using **FastAPI**, **Next.js**, **MySQL**, and **RabbitMQ** with role-based access control, JWT authentication, middleware, background workers, and CSV processing.
 
 ---
 
@@ -11,13 +9,13 @@ The application provides role-based access control for hospital staff and allows
 ## Backend
 
 * FastAPI
-* SQLAlchemy ORM
-* MySQL
+* SQLAlchemy
+* Pydantic
 * JWT Authentication
-* Passlib (Password Hashing)
-* Middleware
+* MySQL
+* RabbitMQ
+* Pika
 * Pandas
-* Uvicorn
 
 ## Frontend
 
@@ -33,43 +31,271 @@ The application provides role-based access control for hospital staff and allows
 
 ## Authentication
 
-* JWT Login
-* Password Hashing using bcrypt
-* Token-based Authentication
-* User Profile API
+* JWT-based authentication
+* Login system
+* Protected routes
+* Token validation middleware
 
 ---
 
 ## Role-Based Access Control
 
-### SUPER_ADMIN
+### Super Admin
 
-* Create users
-* View users
-* Dashboard access
-* Full system access
+* View dashboard
+* Manage users
+* Add users
+* Upload CSV files
+* View hospitals
+* View patients
 
-### ADMIN
+### Admin
 
-* Add hospitals
-* Upload data
-* Download reports
-* Dashboard access
+* Manage hospitals
+* Manage patients
+* Upload CSV files
 
-### DOCTOR
+### Doctor
 
-* View patient information
-* Access hospital details
+* View patients
 
-### RECEPTIONIST
+### Receptionist
 
 * Add patients
-* Admit patients
-* Discharge patients
+* View patients
 
 ---
 
-# User Roles
+# Dashboard
+
+Displays:
+
+* Total Users
+* Total Hospitals
+* Total Patients
+* Admitted Patients
+* Discharged Patients
+
+---
+
+# User Management
+
+Super Admin can:
+
+* View all users
+* Add new users
+* Assign roles:
+
+  * ADMIN
+  * DOCTOR
+  * RECEPTIONIST
+
+---
+
+# Patient Management
+
+* Add patient
+* View patients
+* Role-based access
+* Duplicate prevention
+
+Patient fields:
+
+* Name
+* Age
+* Contact Number
+* Height
+* Weight
+* Blood Group
+
+---
+
+# Hospital Management
+
+* Add hospitals
+* View hospitals
+* Duplicate hospital checking
+
+Hospital fields:
+
+* Name
+* City
+
+---
+
+# CSV Upload
+
+Supported entities:
+
+* Patients
+* Hospitals
+
+CSV files are uploaded through the frontend and processed asynchronously.
+
+---
+
+# RabbitMQ Integration
+
+RabbitMQ is used for background processing.
+
+## CSV Queue
+
+Queue Name:
+
+csv_queue
+
+Used for:
+
+* Hospital CSV uploads
+* Patient CSV uploads
+
+Worker:
+
+```bash
+python -m app.workers.csv_worker
+```
+
+---
+
+## Logging Queue
+
+Queue Name:
+
+log_queue
+
+Used for:
+
+* Login logs
+* API request logs
+
+Worker:
+
+```bash
+python -m app.workers.log_worker
+```
+
+---
+
+# Middleware
+
+## Authentication Middleware
+
+Responsible for:
+
+* JWT validation
+* Setting current user
+* Setting user role
+
+Request state:
+
+```python
+request.state.user
+request.state.role
+```
+
+---
+
+## Logging Middleware
+
+Logs:
+
+* Request method
+* API path
+* Timestamp
+
+Logs are sent to RabbitMQ.
+
+---
+
+# Project Structure
+
+```text
+backend/
+│
+├── app/
+│   ├── middleware/
+│   ├── workers/
+│   ├── tasks/
+│   ├── queues/
+│   ├── models/
+│   ├── schemas/
+│   └── api.py
+│
+frontend/
+│
+├── app/
+├── components/
+├── services/
+└── pages/
+```
+
+---
+
+# Installation
+
+## Backend
+
+```bash
+cd backend
+
+python -m venv venv
+
+source venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+Run backend:
+
+```bash
+uvicorn app.main:app --reload
+```
+
+---
+
+## Frontend
+
+```bash
+cd frontend
+
+npm install
+
+npm run dev
+```
+
+---
+
+# RabbitMQ
+
+Install RabbitMQ:
+
+```bash
+sudo apt install rabbitmq-server
+
+sudo systemctl start rabbitmq-server
+
+sudo systemctl enable rabbitmq-server
+```
+
+---
+
+# Run Workers
+
+CSV Worker:
+
+```bash
+python -m app.workers.csv_worker
+```
+
+Log Worker:
+
+```bash
+python -m app.workers.log_worker
+```
+
+---
+
+# Default Roles
 
 * SUPER_ADMIN
 * ADMIN
@@ -78,328 +304,53 @@ The application provides role-based access control for hospital staff and allows
 
 ---
 
-# Patient Management
-
-* Add patient
-* View patients
-* Search patients
-* Upload patient CSV
-* Patient admission history
-
----
-
-# Hospital Management
-
-* Add hospitals
-* View hospitals
-* Assign patients
-* Hospital-wise patient list
-* Upload hospital CSV
-* Download hospital CSV
-
----
-
-# User Management
-
-Only Super Admin can:
-
-* Create users
-* View users
-* Manage system users
-
----
-
-# Dashboard
-
-Dashboard statistics:
-
-* Total Patients
-* Total Hospitals
-* Admitted Patients
-* Discharged Patients
-* Total Users
-
----
-
-# Project Structure
-
-```text
-Hospital-Project/
-
-├── backend/
-│   ├── app/
-│   │   ├── middleware/
-│   │   ├── routers/
-│   │   ├── utils/
-│   │   ├── security.py
-│   │   └── schemas.py
-│   │
-│   ├── config/
-│   │   ├── db.py
-│   │   └── settings.py
-│   │
-│   ├── main.py
-│   └── models.py
-│
-├── frontend/
-│   ├── app/
-│   ├── components/
-│   ├── services/
-│   └── middleware.ts
-│
-└── README.md
-```
-
----
-
-# Backend Setup
-
-## Create Virtual Environment
-
-```bash
-python -m venv venv
-```
-
-Activate:
-
-### Linux
-
-```bash
-source venv/bin/activate
-```
-
----
-
-## Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## Configure Environment
-
-Create `.env`
-
-```env
-DB_USER=root
-DB_PASSWORD=password
-DB_HOST=localhost
-DB_PORT=3306
-DB_NAME=hospital_db
-
-SECRET_KEY=your_secret_key
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-```
-
----
-
-## Run Backend
-
-```bash
-uvicorn main:app --reload
-```
-
-Backend:
-
-```text
-http://localhost:8000
-```
-
-Swagger:
-
-```text
-http://localhost:8000/docs
-```
-
----
-
-# Frontend Setup
-
-Install packages:
-
-```bash
-npm install
-```
-
-Run:
-
-```bash
-npm run dev
-```
-
-Frontend:
-
-```text
-http://localhost:3000
-```
-
----
-
-# Authentication Flow
-
-1. User logs in.
-2. JWT token is generated.
-3. Token stored in localStorage.
-4. Axios attaches token automatically.
-5. Middleware validates token.
-6. User information stored in request.state.
-7. APIs check user roles.
-
----
-
-# Middleware
-
-## Logging Middleware
-
-Logs:
-
-* Request method
-* URL
-* Response status
-
----
-
-## Authentication Middleware
-
-Validates:
-
-* Authorization header
-* JWT token
-* User existence
-
-Stores:
-
-```python
-request.state.user
-request.state.user_id
-request.state.username
-request.state.role
-```
-
----
-
-# Database Tables
-
-## users
-
-* id
-* username
-* password
-* role
-
-## patients
-
-* id
-* name
-* age
-* contact_no
-* height
-* weight
-* blood_group
-* status
-* current_hospital_id
-
-## hospitals
-
-* id
-* name
-* city
-
-## patient_hospital
-
-* patient_id
-* hospital_id
-* admit_time
-* discharge_time
-
----
-
 # API Endpoints
 
 ## Authentication
 
-| Method | Endpoint    |
-| ------ | ----------- |
-| POST   | /auth/login |
-| GET    | /me         |
-
----
+* POST /auth/login
 
 ## Users
 
-| Method | Endpoint |
-| ------ | -------- |
-| GET    | /users   |
-| POST   | /users   |
-
----
+* GET /users
+* POST /users
 
 ## Patients
 
-| Method | Endpoint        |
-| ------ | --------------- |
-| GET    | /patients       |
-| POST   | /patients       |
-| GET    | /search/patient |
-
----
+* GET /patients
+* POST /patients
 
 ## Hospitals
 
-| Method | Endpoint   |
-| ------ | ---------- |
-| GET    | /hospitals |
-| POST   | /hospitals |
-
----
-
-## Admission
-
-| Method | Endpoint                 |
-| ------ | ------------------------ |
-| POST   | /assign-hospital         |
-| POST   | /patients/{id}/discharge |
-
----
+* GET /hospitals
+* POST /hospitals
 
 ## Dashboard
 
-| Method | Endpoint   |
-| ------ | ---------- |
-| GET    | /dashboard |
+* GET /dashboard
 
----
+## Profile
 
-# Security
+* GET /me
 
-* Password hashing using bcrypt
-* JWT authentication
-* Role-based authorization
-* Protected frontend routes
-* Middleware validation
+## CSV Upload
+
+* POST /upload-data
 
 ---
 
 # Future Enhancements
 
-* RabbitMQ Queue
+* Appointment Management
 * Email Notifications
-* Redis Caching
 * Audit Logs
-* Appointment Module
-* Doctor Scheduling
-* Billing System
+* Report Generation
+* Appointment Scheduling
+* Redis Caching
 * Docker Deployment
 * Kubernetes Deployment
-* CI/CD Pipeline
 
 ---
 
 # Author
-
-Moksha Krishna
-
-Hospital Management System built using FastAPI and Next.js.
+Moksha Krishna 
